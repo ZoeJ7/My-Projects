@@ -1,0 +1,273 @@
+#include "seamcarving.h"
+#include "c_img.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <stdbool.h>
+
+
+
+int min_val3(double v1, double v2, double v3) {
+    if(v1 <= v2 && v1 <= v3) {
+        return v1;
+    } else if (v2 <= v1 && v2 <= v3) {
+        return v2;
+    } else {
+        return v3;
+    }
+
+}
+
+int min_val2(double v1, double v2) {
+    if (v1 <= v2) {
+        return v1;
+    } else {
+        return v2;
+    }
+
+}
+
+
+void calc_energy(struct rgb_img *im, struct rgb_img **grad) {
+
+    // create grad image 
+    create_img(grad, im->height, im->width);
+
+    //iterate through every pixel
+    for(int h = 0; h < im->height; h++) {
+        for(int w = 0; w < im->width; w++) {
+
+                double ry = 0.0;
+                double gy = 0.0;
+                double by = 0.0;
+
+                double rx = 0.0;
+                double gx = 0.0;
+                double bx = 0.0;                    
+
+                // get rbg values in the Y direction
+                if(h == 0) { // top row
+                    ry = get_pixel(im, 1, w, 0) - get_pixel(im, im->height-1, w, 0);
+                    gy = get_pixel(im, 1, w, 1) - get_pixel(im, im->height-1, w, 1);
+                    by = get_pixel(im, 1, w, 2) - get_pixel(im, im->height-1, w, 2);
+                } else if(h == im->height-1) { // last row
+                    ry = get_pixel(im, 0, w, 0) - get_pixel(im, im->height-2, w, 0);
+                    gy = get_pixel(im, 0, w, 1) - get_pixel(im, im->height-2, w, 1);
+                    by = get_pixel(im, 0, w, 2) - get_pixel(im, im->height-2, w, 2);
+                } else {
+                    ry = get_pixel(im, h-1, w, 0) - get_pixel(im, h+1, w, 0);
+                    gy = get_pixel(im, h-1, w, 1) - get_pixel(im, h+1, w, 1);
+                    by = get_pixel(im, h-1, w, 2) - get_pixel(im, h+1, w, 2);
+                }
+                
+
+                // get rbg values in the X direction
+                if (w == 0){ // far left
+                    rx = get_pixel(im, h, im->width-1, 0) - get_pixel(im, h, 1, 0);
+                    gx = get_pixel(im, h, im->width-1, 1) - get_pixel(im, h, 1, 1);
+                    bx = get_pixel(im, h, im->width-1, 2) - get_pixel(im, h, 1, 2);   
+                } else if(w == im->width-1) { // far right
+                    rx = get_pixel(im, h, 0, 0) - get_pixel(im, h, im->width-2, 0);
+                    gx = get_pixel(im, h, 0, 1) - get_pixel(im, h, im->width-2, 1);
+                    bx = get_pixel(im, h, 0, 2) - get_pixel(im, h, im->width-2, 2);   
+                } else {
+                    rx = get_pixel(im, h, w-1, 0) - get_pixel(im, h, w+1, 0);
+                    gx = get_pixel(im, h, w-1, 1) - get_pixel(im, h, w+1, 1);
+                    bx = get_pixel(im, h, w-1, 2) - get_pixel(im, h, w+1, 2);   
+                }
+
+                //Calculate dual gradient
+                double deltaX = rx*rx + gx*gx + bx*bx;
+                double deltaY = ry*ry + gy*gy + by*by;
+
+                double gradEnergy = sqrt(deltaX + deltaY);
+
+                uint8_t dgEnergy = (uint8_t)(gradEnergy/10); 
+                set_pixel(*grad, h, w, dgEnergy, dgEnergy, dgEnergy);
+        }
+
+    }
+    //printf("calc energy completed \n");
+}
+
+
+void dynamic_seam(struct rgb_img *grad, double **best_arr) {
+    // gonna need to malloc size for best array
+    *best_arr = (double*)malloc(grad->height * grad->width * sizeof(double));
+
+
+    for(int h = 0; h < grad->height; h++) {
+
+        for(int w = 0; w < grad->width; w++) {
+
+            // top row 
+            if(h == 0) {
+                (*best_arr)[w] = get_pixel(grad, 0, w, 0);
+                // printf("%f", (*best_arr)[w]);
+                // printf("   ");
+            } else if(w == 0) { // left
+                (*best_arr)[h*(grad->width) + w] = get_pixel(grad, h, w, 0) + min_val2((*best_arr)[(h-1)*(grad->width) + w], (*best_arr)[(h-1)*(grad->width) + (w+1)]);
+                // printf("%f", (*best_arr)[h*(grad->width) + w]);
+                // printf("   ");
+            } else if(w == grad->width -1) { // right
+                (*best_arr)[h*(grad->width) + w] = get_pixel(grad, h, w, 0) + min_val2((*best_arr)[(h-1)*(grad->width) + w], (*best_arr)[(h-1)*(grad->width) + (w-1)]);
+                // printf("%f", (*best_arr)[h*(grad->width) + w]);
+                // printf("   ");
+            } else {
+                (*best_arr)[h*(grad->width) + w] = get_pixel(grad, h, w, 0) + min_val3((*best_arr)[(h-1)*(grad->width) + w], (*best_arr)[(h-1)*(grad->width) + (w+1)], (*best_arr)[(h-1)*(grad->width) + (w-1)]);
+                // printf("%f", (*best_arr)[h*(grad->width) + w]);
+                // printf("   ");
+            }
+
+
+        } //printf("\n");
+        
+        }
+    //printf("dynamic seam completed \n");
+}
+
+
+void recover_path(double *best, int height, int width, int **path) {
+
+    *path = (int*)malloc(height * sizeof(int));
+    int min_index;
+    int prev_index;
+
+    //printf("\n a \n");
+
+
+    for(int h = height-1; h != -1; h--) {
+        if(h == height-1) { // bottom row
+            min_index = 0;
+            for(int w = 0; w <= width-1; w++) {
+                if(best[(height-1)*width + w] <= best[(height-1)*width + min_index]) {
+                    min_index = w;
+                    
+                }
+            } 
+            //printf("%d", min_index);
+        } else if (prev_index == 0) { // left 
+            if(best[(h*width) + (prev_index)] <= best[(h*width) + (prev_index + 1)]) {
+                min_index = prev_index;
+            } else {
+                min_index = prev_index+1;
+            }
+        } else if (prev_index == width-1) { // right
+            if(best[(h*width) + (prev_index)] <= best[(h*width) + (prev_index - 1)]) {
+                min_index = prev_index;
+            } else {
+                min_index = prev_index-1;
+            }   
+        } else {
+            if(best[(h*width) + (prev_index-1)] <= best[(h*width) + (prev_index)]) { // left less then mid
+                if((best[(h*width) + (prev_index-1)] <= best[(h*width) + (prev_index+1)])) { // left also less than right
+                    min_index = prev_index -1;
+                } else {
+                    min_index = prev_index + 1;
+                }
+            } else if(best[(h*width) + (prev_index)] <= best[(h*width) + (prev_index + 1)]) { // mid less than left and right
+                min_index = prev_index;
+            } else { // right less then the others
+                min_index = prev_index + 1;
+
+            }
+        }
+        prev_index = min_index;
+        //printf("%d\n", min_index);
+        (*path)[h] = min_index;
+
+    }
+
+
+    // for(int i = 0; i < height; i++) {
+    //     printf("%d", path[i]);
+    //     printf(" ");
+    // }
+    //printf("recover seam completed \n");
+
+}
+
+
+void remove_seam(struct rgb_img *src, struct rgb_img **dest, int *path) {
+
+    create_img(dest, src->height, (src->width)-1);
+
+    bool seam_passed = false;
+
+    for(int h = 0; h < src->height; h++) {
+        for(int w = 0; w < src->width; w++) {
+            if(w != path[h] && seam_passed == false) {
+                int r = get_pixel(src, h, w, 0);
+                int g = get_pixel(src, h, w, 1);
+                int b = get_pixel(src, h, w, 2);
+                set_pixel(*dest, h, w, r, g, b);  
+            } else if(w == path[h]) {
+                seam_passed = true;
+            } else {
+                int r = get_pixel(src, h, w, 0);
+                int g = get_pixel(src, h, w, 1);
+                int b = get_pixel(src, h, w, 2);
+                set_pixel(*dest, h, w-1, r, g, b);  
+            }
+        }
+        seam_passed = false;
+
+    }
+
+    //printf("remove seam completed \n");
+
+}
+
+
+// int main() {
+
+//     // struct rgb_img *im;
+//     // struct rgb_img *grad;
+//     // double *best_arr;
+//     // int *path;
+
+//     // read_in_img(&im, "6x5.bin");
+
+//     // calc_energy(im, &grad);
+//     // print_grad(grad);
+
+//     // dynamic_seam(grad,&best_arr);
+
+//     // recover_path(best_arr, grad->height, grad->width, &path);
+
+//     // printf("yay\n");
+
+//     struct rgb_img *im;
+//     struct rgb_img *cur_im;
+//     struct rgb_img *grad;
+//     double *best;
+//     int *path;
+
+//     read_in_img(&im, "HJoceanSmall.bin");
+    
+//     for(int i = 0; i < 26; i++){
+//         printf("i = %d\n", i);
+//         calc_energy(im,  &grad);
+//         dynamic_seam(grad, &best);
+//         recover_path(best, grad->height, grad->width, &path);
+//         remove_seam(im, &cur_im, path);
+
+//         char filename[200];
+//         sprintf(filename, "img%d.bin", i);
+//         write_img(cur_im, filename);
+
+
+//         destroy_image(im);
+//         destroy_image(grad);
+//         free(best);
+//         free(path);
+//         im = cur_im;
+//     }
+//     destroy_image(im);
+
+
+
+
+//     return 0;
+// }
