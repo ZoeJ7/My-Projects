@@ -1,4 +1,4 @@
-Hi! This is a repository with various codes I have made throughout the oast few years. Here are some descriptions of all the projects here:
+Hi! This is a repository with various codes I have made throughout the past few years. Here are some descriptions of all the projects here:
 
 **mf_6.2.TyreModel**
 This project is a tyre model I made in python for University of Toronto Formula Racing. This model uses python's pydantic library to takes in tyre data and apply it to the Magic Formula estimating
